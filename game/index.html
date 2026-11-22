@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Game kota top-down: jalan kaki, mengemudi, antar paket, lalu lintas, dan patroli.">
 <title>GTA Mini — Kota Top-Down</title>
 <link rel="stylesheet" href="style.css">
 </head>
@@ -11,8 +12,20 @@
 <div id="hud">
   <span id="speed">0 km/jam</span>
   <span id="time">00:00</span>
-  <span class="hint">WASD / Panah — mengemudi</span>
+  <span id="wanted">Wanted: 0</span>
+  <span id="mission">Misi: —</span>
+  <span id="money">$0</span>
+  <span class="hint">WASD/Panah jalan &amp; mengemudi · E masuk/keluar mobil · P jeda</span>
 </div>
+<canvas id="minimap" width="160" height="120"></canvas>
+<div id="start">
+  <h1>GTA 6 MINI</h1>
+  <p>Kota top-down — jalan kaki, mengemudi, misi, polisi.</p>
+  <p class="cta">klik / tekan Enter untuk mulai</p>
+</div>
+<div id="msg"></div>
+<div id="controls">WASD bergerak · E masuk/keluar mobil · P jeda</div>
 <script src="game.js"></script>
+<script src="systems.js"></script>
 </body>
 </html>

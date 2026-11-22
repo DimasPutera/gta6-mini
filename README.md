@@ -1,6 +1,8 @@
 # GTA 6 Mini — Kota Top-Down
 
-[![make.fun](https://img.shields.io/badge/make.fun-bounty%20gta6--01-7c3aed)](https://make.fun/r/5tsm9en2) [![entry](https://img.shields.io/badge/entry-gta6--01-22c55e)](https://make.fun/r/5tsm9en2) [![build](https://img.shields.io/badge/build-passing-22c55e)](https://make.fun/r/5tsm9en2)
+[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/gta6-01/DimasPutera/gta6-mini/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/gta6-01/DimasPutera/gta6-mini/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
 Game kota 2D top-down: jalan kaki, naik mobil, lalu lintas hidup, pejalan kaki,
 polisi dengan level wanted, misi antar paket, minimap, dan simpan progres otomatis.

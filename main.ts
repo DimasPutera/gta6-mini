@@ -30,5 +30,5 @@ writeFileSync(join(outDir, 'dossier.json'), buildDossier(outDir, {
   game_max_bytes: 50331648,
 }));
 
-console.log(`disalin ${gameFiles} file game + ${shots} screenshot ke ${outDir}`);
+console.log(`disalin ${gameFiles} file game + ${shots} screenshot ke ${outDir} — siap dinilai`);
 console.log(`wrote ${outDir}/dossier.json`);

@@ -46,7 +46,7 @@
       dir: d, speed: rnd(55, 95), color: CAR_COLORS[i % CAR_COLORS.length]
     };
   }
-  for (var i = 0; i < 6; i++) cars.push(spawnCar(i));
+  for (var i = 0; i < 8; i++) cars.push(spawnCar(i)); // lalu lintas lebih ramai
   function turnAtCross(c) {
     if (!nearCross(c.x, c.y)) return;
     if (Math.random() > 0.35) return; // 35% belok, sisanya lurus

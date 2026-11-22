@@ -1,201 +1,189 @@
-// systems.js — sistem tambahan game kota 2D (dimuat setelah game.js).
-// State: window.G.api.state { x, y, inCar, car, money, dest, hasPkg }.
-// Kamera sama seperti game.js; loop rAF sendiri di canvas #game.
-(function () {
-  'use strict';
-  var cv = document.getElementById('game');
-  if (!cv) return;
-  var ctx = cv.getContext('2d');
-  var WORLD = 1152, ROAD_W = 56, GRID = 192;
-  var wantedEl = document.getElementById('wanted');
-  var missionEl = document.getElementById('mission');
-  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
-  function rnd(a, b) { return a + Math.random() * (b - a); }
-  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
-  function dist(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); }
-  function state() { return (window.G && window.G.api && window.G.api.state) || {}; }
-  function camera() {
-    var s = state();
-    return {
-      x: clamp((s.x || 0) - cv.width / 2, 0, WORLD - cv.width),
-      y: clamp((s.y || 0) - cv.height / 2, 0, WORLD - cv.height)
-    };
+// systems.js — sistem kota untuk game 2D top-down (dipakai game.js)
+// G.api = { state, enterCar, exitCar, start, save, load }
+// S.api = { traffic, peds, police, missions, update }
+'use strict';
+const ROAD = 96, BLOCK = 160, GRID = 5, STEP = ROAD + BLOCK, WORLD = GRID * STEP;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const roadCoord = (i) => i * STEP + ROAD / 2;
+const roads = Array.from({ length: GRID }, (_, i) => roadCoord(i));
+function nearestRoad(v) { let best = roads[0]; for (const r of roads) if (Math.abs(v - r) < Math.abs(v - best)) best = r; return best; }
+function onRoad(v) { return roads.some((r) => Math.abs(v - r) < 10); }
+function getPlayer() { try { return G.api.state.player || null; } catch (e) { return null; } }
+function getState() { try { return G.api.state || null; } catch (e) { return null; } }
+// --- Lalu lintas: mobil di jalan mengikuti grid, belok di persimpangan ---
+const traffic = [];
+const CAR_COLORS = ['#e74c3c', '#3498db', '#f1c40f', '#2ecc71', '#9b59b6', '#ecf0f1', '#e67e22'];
+function laneOffset(dx, dy) {
+  if (dx > 0) return { x: 0, y: 14 };
+  if (dx < 0) return { x: 0, y: -14 };
+  if (dy > 0) return { x: -14, y: 0 };
+  return { x: 14, y: 0 };
+}
+function spawnCar() {
+  const vertical = Math.random() < 0.5, lane = pick(roads), side = Math.random() < 0.5 ? -1 : 1;
+  const dx = vertical ? 0 : side, dy = vertical ? side : 0, off = laneOffset(dx, dy);
+  const car = { x: vertical ? lane + off.x : (dx > 0 ? -40 : WORLD + 40), y: vertical ? (dy > 0 ? -40 : WORLD + 40) : lane + off.y,
+    dx, dy, speed: 0, maxSpeed: rand(55, 95), color: pick(CAR_COLORS), w: 26, h: 14, justTurned: false };
+  traffic.push(car); return car;
+}
+function carAhead(car) {
+  for (const o of traffic) {
+    if (o === car || o.dx !== car.dx || o.dy !== car.dy) continue;
+    const ahead = (o.x - car.x) * car.dx + (o.y - car.y) * car.dy;
+    const side = Math.abs((o.x - car.x) * car.dy - (o.y - car.y) * car.dx);
+    if (ahead > 0 && ahead < 52 && side < 22) return o;
   }
-  function onRoad(v) {
-    var m = ((v % GRID) + GRID) % GRID;
-    return m < ROAD_W || m > GRID - ROAD_W;
+  return null;
+}
+function maybeTurn(car) {
+  if (!onRoad(car.x) || !onRoad(car.y) || car.justTurned || Math.random() > 0.3) return;
+  const wasHorizontal = car.dx !== 0, side = pick([-1, 1]);
+  const ndx = wasHorizontal ? 0 : side, ndy = wasHorizontal ? side : 0, off = laneOffset(ndx, ndy);
+  car.x = nearestRoad(car.x) + off.x; car.y = nearestRoad(car.y) + off.y;
+  car.dx = ndx; car.dy = ndy; car.justTurned = true;
+}
+function updateTraffic(dt) {
+  for (let i = traffic.length - 1; i >= 0; i--) {
+    const car = traffic[i];
+    car.speed = carAhead(car) ? Math.max(0, car.speed - 220 * dt) : Math.min(car.maxSpeed, car.speed + 90 * dt);
+    car.x += car.dx * car.speed * dt; car.y += car.dy * car.speed * dt;
+    maybeTurn(car);
+    if (!onRoad(car.x) || !onRoad(car.y)) car.justTurned = false;
+    if (car.x < -60 || car.x > WORLD + 60 || car.y < -60 || car.y > WORLD + 60) traffic.splice(i, 1);
   }
-  function nearCross(x, y) { return onRoad(x) && onRoad(y); }
-  function roadCoord() {
-    var i = Math.floor(rnd(0, WORLD / GRID));
-    return i * GRID + rnd(8, ROAD_W - 8);
+  while (traffic.length < 10) spawnCar();
+}
+// --- Pejalan kaki: berjalan di trotoar (tepi jalan) ---
+const peds = [];
+const PED_COLORS = ['#f39c12', '#1abc9c', '#e84393', '#00cec9', '#fd79a8', '#636e72'];
+function spawnPed() {
+  const vertical = Math.random() < 0.5, lane = pick(roads), side = Math.random() < 0.5 ? -1 : 1;
+  const dx = vertical ? 0 : side, dy = vertical ? side : 0, off = ROAD / 2 + 12;
+  const ped = { x: vertical ? lane + (side > 0 ? off : -off) : (dx > 0 ? -20 : WORLD + 20),
+    y: vertical ? (dy > 0 ? -20 : WORLD + 20) : lane + (side > 0 ? off : -off),
+    dx, dy, speed: rand(20, 42), color: pick(PED_COLORS), justTurned: false };
+  peds.push(ped); return ped;
+}
+function updatePeds(dt) {
+  for (let i = peds.length - 1; i >= 0; i--) {
+    const p = peds[i];
+    p.x += p.dx * p.speed * dt; p.y += p.dy * p.speed * dt;
+    if (onRoad(p.x) && onRoad(p.y) && !p.justTurned && Math.random() < 0.02) {
+      const wasHorizontal = p.dx !== 0, side = pick([-1, 1]);
+      p.dx = wasHorizontal ? 0 : side; p.dy = wasHorizontal ? side : 0; p.justTurned = true;
+    }
+    if (!onRoad(p.x) || !onRoad(p.y)) p.justTurned = false;
+    if (p.x < -30 || p.x > WORLD + 30 || p.y < -30 || p.y > WORLD + 30) peds.splice(i, 1);
   }
-  function sideCoord() {
-    var i = Math.floor(rnd(0, WORLD / GRID));
-    return i * GRID + ROAD_W + rnd(6, 26);
-  }
-  var CAR_COLORS = ['#e74c3c', '#3498db', '#f1c40f', '#9b59b6', '#1abc9c', '#e67e22'];
-  var DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // kanan, bawah, kiri, atas
-  var cars = [];
-  function spawnCar(i) {
-    var horiz = Math.random() < 0.5;
-    var d = horiz ? (Math.random() < 0.5 ? 0 : 2) : (Math.random() < 0.5 ? 1 : 3);
-    return {
-      x: horiz ? rnd(0, WORLD) : roadCoord(),
-      y: horiz ? roadCoord() : rnd(0, WORLD),
-      dir: d, speed: rnd(55, 95), color: CAR_COLORS[i % CAR_COLORS.length]
-    };
-  }
-  for (var i = 0; i < 8; i++) cars.push(spawnCar(i)); // lalu lintas lebih ramai
-  function turnAtCross(c) {
-    if (!nearCross(c.x, c.y)) return;
-    if (Math.random() > 0.35) return; // 35% belok, sisanya lurus
-    var left = (c.dir + 3) % 4, right = (c.dir + 1) % 4;
-    c.dir = Math.random() < 0.5 ? left : right;
-    // Ratakan ke tengah jalan setelah belok.
-    c.x = Math.round(c.x / GRID) * GRID + ROAD_W / 2;
-    c.y = Math.round(c.y / GRID) * GRID + ROAD_W / 2;
-  }
-  function moveCar(c, dt) {
-    var d = DIRS[c.dir];
-    c.x += d[0] * c.speed * dt;
-    c.y += d[1] * c.speed * dt;
-    if (c.x < -30) { c.x = WORLD + 20; c.y = roadCoord(); }
-    if (c.x > WORLD + 30) { c.x = -20; c.y = roadCoord(); }
-    if (c.y < -30) { c.y = WORLD + 20; c.x = roadCoord(); }
-    if (c.y > WORLD + 30) { c.y = -20; c.x = roadCoord(); }
-    turnAtCross(c);
-  }
-  var PED_COLORS = ['#ff8fa3', '#7fb3ff', '#ffd166', '#90e0a0', '#d0a2ff', '#ffb08a'];
-  var peds = [];
-  for (var j = 0; j < 8; j++) {
-    peds.push({
-      x: Math.random() < 0.5 ? sideCoord() : rnd(0, WORLD),
-      y: Math.random() < 0.5 ? rnd(0, WORLD) : sideCoord(),
-      dir: Math.floor(rnd(0, 4)), speed: rnd(18, 32),
-      color: PED_COLORS[j % PED_COLORS.length]
-    });
-  }
-  function movePed(p, dt) {
-    var d = DIRS[p.dir];
-    p.x += d[0] * p.speed * dt;
-    p.y += d[1] * p.speed * dt;
-    if (p.x < 10 || p.x > WORLD - 10 || p.y < 10 || p.y > WORLD - 10) {
-      p.dir = (p.dir + 2) % 4; // putar balik di tepi dunia
-    } else if (nearCross(p.x, p.y) && Math.random() < 0.02) {
-      p.dir = Math.floor(rnd(0, 4)); // kadang belok di persimpangan
+  while (peds.length < 12) spawnPed();
+}
+// --- Wanted & polisi: bintang naik saat curi mobil / tabrak pejalan kaki ---
+let wanted = 0, wantedTimer = 0;
+const police = [];
+function addWanted(n) { wanted = clamp(wanted + n, 0, 5); wantedTimer = 0; }
+function decayWanted(dt) { if (wanted <= 0) return; wantedTimer += dt; if (wantedTimer >= 12) { wanted -= 1; wantedTimer = 0; } }
+function spawnPolice() {
+  const player = getPlayer(), base = player || { x: WORLD / 2, y: WORLD / 2 }, angle = rand(0, Math.PI * 2);
+  const cop = { x: base.x + Math.cos(angle) * 320, y: base.y + Math.sin(angle) * 320, speed: rand(115, 145), color: '#2c3e50', siren: 0 };
+  police.push(cop); return cop;
+}
+function updatePolice(dt) {
+  const player = getPlayer(), want = wanted > 0 ? Math.min(wanted, 3) : 0;
+  while (police.length < want) spawnPolice();
+  for (let i = police.length - 1; i >= 0; i--) {
+    const cop = police[i]; cop.siren += dt;
+    if (!player || wanted <= 0) { if (police.length > want) police.splice(i, 1); continue; }
+    const d = dist(cop, player), a = Math.atan2(player.y - cop.y, player.x - cop.x);
+    cop.x += Math.cos(a) * cop.speed * dt; cop.y += Math.sin(a) * cop.speed * dt;
+    if (d < 28) { // tertangkap: denda Rp50, polisi mundur sejenak
+      const st = getState();
+      if (st && typeof st.money === 'number') st.money = Math.max(0, st.money - 50);
+      cop.x -= Math.cos(a) * 40; cop.y -= Math.sin(a) * 40;
     }
   }
-  var wanted = 0, lastIncident = 0, lastHitAt = 0;
-  function setWanted(v) {
-    wanted = clamp(v, 0, 5);
-    lastIncident = performance.now();
-    if (wantedEl) wantedEl.textContent = 'Wanted: ' + wanted + '/5';
+}
+function stealCar() {
+  const player = getPlayer();
+  if (!player) return null;
+  let best = null, bestD = 48;
+  for (const car of traffic) { const d = dist(car, player); if (d < bestD) { best = car; bestD = d; } }
+  if (!best) return null;
+  traffic.splice(traffic.indexOf(best), 1);
+  addWanted(1);
+  try { G.api.enterCar(best); } catch (e) { /* game.js belum siap */ }
+  return best;
+}
+function checkPedHit() {
+  const player = getPlayer(), st = getState();
+  if (!player || !st || !st.inCar) return;
+  for (let i = peds.length - 1; i >= 0; i--) {
+    if (dist(peds[i], player) < 22) { peds.splice(i, 1); addWanted(1); }
   }
-  function tickWanted(now) {
-    if (wanted > 0 && now - lastIncident >= 20000) setWanted(wanted - 1);
+}
+// --- Misi: antar paket ke titik tujuan, dapat hadiah uang ---
+const missions = [
+  { id: 'm1', name: 'Antar paket — Pasar', to: { x: roads[4], y: roads[1] }, reward: 150, active: false, done: false },
+  { id: 'm2', name: 'Antar paket — Pelabuhan', to: { x: roads[0], y: roads[4] }, reward: 200, active: false, done: false },
+  { id: 'm3', name: 'Antar paket — Stasiun', to: { x: roads[3], y: roads[3] }, reward: 250, active: false, done: false },
+  { id: 'm4', name: 'Antar paket — Rumah Sakit', to: { x: roads[1], y: roads[0] }, reward: 300, active: false, done: false },
+];
+let activeMission = null;
+function startMission(id) {
+  const m = missions.find((x) => x.id === id && !x.done);
+  if (!m) return null;
+  missions.forEach((x) => { x.active = false; });
+  m.active = true; activeMission = m; return m;
+}
+function updateMissions() {
+  if (!activeMission) return;
+  const player = getPlayer();
+  if (!player || dist(player, activeMission.to) >= 32) return;
+  const st = getState();
+  if (st && typeof st.money === 'number') st.money += activeMission.reward;
+  activeMission.done = true; activeMission.active = false; activeMission = null;
+}
+// --- Gambar (opsional, dipanggil game.js tiap frame) ---
+function drawTraffic(ctx) {
+  for (const c of traffic) { ctx.fillStyle = c.color; ctx.fillRect(c.x - c.w / 2, c.y - c.h / 2, c.w, c.h); }
+}
+function drawPeds(ctx) {
+  for (const p of peds) { ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill(); }
+}
+function drawPolice(ctx) {
+  for (const cop of police) {
+    ctx.fillStyle = cop.color; ctx.fillRect(cop.x - 13, cop.y - 7, 26, 14);
+    ctx.fillStyle = Math.floor(cop.siren * 4) % 2 ? '#e74c3c' : '#3498db';
+    ctx.fillRect(cop.x - 13, cop.y - 11, 26, 4);
   }
-  var patrol = { x: 600, y: 100, speed: 130, active: false };
-  function updatePatrol(s, dt, now) {
-    patrol.active = wanted > 0;
-    if (!patrol.active) return;
-    var dx = (s.x || 0) - patrol.x, dy = (s.y || 0) - patrol.y;
-    var d = Math.hypot(dx, dy) || 1;
-    patrol.x += (dx / d) * patrol.speed * dt;
-    patrol.y += (dy / d) * patrol.speed * dt;
-    if (d < 26 && now - lastHitAt > 1000) {
-      lastHitAt = now;
-      if (typeof s.money === 'number') s.money = Math.max(0, s.money - 500);
-      setWanted(0);
-      patrol.x = clamp((s.x || 0) + 300, 0, WORLD);
-      patrol.y = clamp((s.y || 0) - 300, 0, WORLD);
-    }
-  }
-  // ---- Tabrakan pemain: +1 wanted (cooldown 1 detik) ----
-  function checkHits(s, now) {
-    if (now - lastHitAt < 1000) return;
-    var r = s.inCar ? 20 : 14, hit = false;
-    for (var a = 0; a < cars.length; a++) {
-      if (dist(s.x, s.y, cars[a].x, cars[a].y) < r + 14) { hit = true; break; }
-    }
-    if (!hit) for (var b = 0; b < peds.length; b++) {
-      if (dist(s.x, s.y, peds[b].x, peds[b].y) < r + 8) { hit = true; break; }
-    }
-    if (hit) { lastHitAt = now; setWanted(wanted + 1); }
-  }
-  // ---- Audio: bip WebAudio saat paket terantar ----
-  var actx = null, prevHasPkg = false;
-  function beep(freq, dur) {
-    try {
-      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-      if (actx.state === 'suspended') actx.resume();
-      var o = actx.createOscillator(), g = actx.createGain();
-      o.type = 'sine'; o.frequency.value = freq || 880;
-      g.gain.setValueAtTime(0.15, actx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + (dur || 0.18));
-      o.connect(g); g.connect(actx.destination);
-      o.start(); o.stop(actx.currentTime + (dur || 0.18));
-    } catch (e) { /* audio tidak tersedia, abaikan */ }
-  }
-  function tickAudio(s) {
-    if (prevHasPkg && !s.hasPkg) { beep(880, 0.15); setTimeout(function () { beep(1320, 0.25); }, 160); }
-    prevHasPkg = !!s.hasPkg;
-  }
-  function tickMission(s) {
-    if (!missionEl) return;
-    if (s.hasPkg && s.dest) {
-      missionEl.textContent = 'Misi: antar paket ke (' + Math.round(s.dest.x) + ', ' + Math.round(s.dest.y) + ')';
-    } else if (s.hasPkg) {
-      missionEl.textContent = 'Misi: antar paket ke tujuan';
-    } else {
-      missionEl.textContent = 'Misi: ambil paket';
-    }
-  }
-  function drawCar(c, cam) {
-    var horiz = c.dir === 0 || c.dir === 2;
-    ctx.fillStyle = c.color;
-    ctx.fillRect(c.x - cam.x - (horiz ? 16 : 9), c.y - cam.y - (horiz ? 9 : 16),
-      horiz ? 32 : 18, horiz ? 18 : 32);
-  }
-  function draw() {
-    var cam = camera();
-    for (var a = 0; a < cars.length; a++) drawCar(cars[a], cam);
-    for (var b = 0; b < peds.length; b++) {
-      ctx.fillStyle = peds[b].color;
-      ctx.beginPath();
-      ctx.arc(peds[b].x - cam.x, peds[b].y - cam.y, 6, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    if (patrol.active) {
-      ctx.fillStyle = '#111';
-      ctx.fillRect(patrol.x - cam.x - 16, patrol.y - cam.y - 9, 32, 18);
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(patrol.x - cam.x - 16, patrol.y - cam.y - 9, 32, 5);
-      ctx.fillStyle = '#e74c3c';
-      ctx.fillRect(patrol.x - cam.x - 4, patrol.y - cam.y - 9, 8, 5);
-    }
-  }
-  var last = performance.now();
-  function frame(now) {
-    var dt = Math.min((now - last) / 1000, 0.05);
-    last = now;
-    var s = state();
-    for (var a = 0; a < cars.length; a++) moveCar(cars[a], dt);
-    for (var b = 0; b < peds.length; b++) movePed(peds[b], dt);
-    checkHits(s, now);
-    tickWanted(now);
-    updatePatrol(s, dt, now);
-    tickAudio(s);
-    tickMission(s);
-    draw();
-    requestAnimationFrame(frame);
-  }
-  setWanted(0);
-  requestAnimationFrame(frame);
-  window.G = window.G || {};
-  window.G.systems = {
-    cars: cars, peds: peds, patrol: patrol,
-    get wanted() { return wanted; },
-    setWanted: setWanted, beep: beep, camera: camera
-  };
-})();
+}
+function drawMissions(ctx) {
+  if (!activeMission) return;
+  ctx.strokeStyle = '#f1c40f'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(activeMission.to.x, activeMission.to.y, 18, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = '#f1c40f'; ctx.font = '12px sans-serif';
+  ctx.fillText(activeMission.name, activeMission.to.x + 24, activeMission.to.y);
+}
+function resetCity() {
+  traffic.length = 0; peds.length = 0; police.length = 0;
+  wanted = 0; wantedTimer = 0; activeMission = null;
+  missions.forEach((m) => { m.active = false; m.done = false; });
+  for (let i = 0; i < 10; i++) spawnCar();
+  for (let i = 0; i < 12; i++) spawnPed();
+}
+// --- Update utama & ekspor ---
+function update(dt) {
+  const step = clamp(dt || 0.016, 0, 0.05);
+  updateTraffic(step); updatePeds(step); checkPedHit();
+  decayWanted(step); updatePolice(step); updateMissions();
+}
+for (let i = 0; i < 10; i++) spawnCar();
+for (let i = 0; i < 12; i++) spawnPed();
+const S = (typeof window !== 'undefined' ? window : globalThis).S || {};
+S.api = { traffic, peds, police, missions, update,
+  wanted: () => wanted, addWanted, stealCar, startMission, spawnCar, spawnPed,
+  draw: { traffic: drawTraffic, peds: drawPeds, police: drawPolice, missions: drawMissions }, resetCity };
+if (typeof window !== 'undefined') window.S = S;
+if (typeof globalThis !== 'undefined') globalThis.S = S;

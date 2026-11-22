@@ -99,7 +99,7 @@
     let dy = (keys.s ? 1 : 0) - (keys.w ? 1 : 0);
     const len = Math.hypot(dx, dy) || 1;
     dx /= len; dy /= len;
-    const spd = state.inCar ? 260 : 120; // jalan kaki sedikit lebih cepat
+    const spd = state.inCar ? 260 : 110;
     const vx = dx * spd, vy = dy * spd;
     const target = state.inCar ? state.car : state;
     const ox = target.x, oy = target.y;

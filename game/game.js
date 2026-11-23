@@ -1,208 +1,200 @@
-// game.js — game kota 2D top-down (canvas #game)
+// game.js — GTA 6 Mini: kota top-down (grid sama dengan systems.js).
+// Grid: WORLD 1280, STEP 256, ROAD 96, BLOCK 160.
+// Pusat jalan: i*256+128 -> 128, 384, 640, 896, 1152 (jalan 96 lebar).
+// Bangunan 160x160 di celah antar jalan (x,y mulai 176+256i, i 0..3).
 (() => {
   'use strict';
-  const cv = document.getElementById('game');
-  const ctx = cv.getContext('2d');
-  const mm = document.getElementById('minimap');
-  const mmx = mm ? mm.getContext('2d') : null;
-  const elSpeed = document.getElementById('speed');
-  const elTime = document.getElementById('time');
-  const elMoney = document.getElementById('money');
+  const WORLD = 1280, STEP = 256, ROAD = 96, BLOCK = 160;
+  const CENTRES = [128, 384, 640, 896, 1152];
+  // Kecepatan jalan kaki pemain, piksel per detik.
+  const WALK_SPEED = 150, CAR_SPEED = 260, SAVE_KEY = 'gta6mini-save';
+  const cv = document.getElementById('game'), ctx = cv.getContext('2d');
+  const mm = document.getElementById('minimap'), mmx = mm ? mm.getContext('2d') : null;
+  const elSpeed = document.getElementById('speed'), elTime = document.getElementById('time');
+  const elMoney = document.getElementById('money'), elWanted = document.getElementById('wanted');
   const btnStart = document.getElementById('start');
-  const TILE = 48, COLS = 24, ROWS = 18;
-  const W = COLS * TILE, H = ROWS * TILE;
-  const SAVE_KEY = 'cityGameSaveV1';
-  const ROAD = 0, WALK = 1, BUILD = 2;
-  const grid = [];
-  for (let y = 0; y < ROWS; y++) {
-    const row = [];
-    for (let x = 0; x < COLS; x++) {
-      if (x % 4 === 0 || y % 4 === 0) row.push(ROAD);
-      else if (x % 4 === 1 || y % 4 === 1) row.push(WALK);
-      else row.push(BUILD);
-    }
-    grid.push(row);
-  }
-  const buildings = [];
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      if (grid[y][x] === BUILD) {
-        buildings.push({ x: x * TILE, y: y * TILE, w: TILE, h: TILE,
-          c: ['#7a8a99', '#8a7a6a', '#6a7a8a', '#9a8a7a'][(x + y) % 4] });
-      }
-    }
-  }
-  function roadTiles() {
-    const out = [];
-    for (let y = 0; y < ROWS; y++)
-      for (let x = 0; x < COLS; x++)
-        if (grid[y][x] === ROAD) out.push({ x: x * TILE + TILE / 2, y: y * TILE + TILE / 2 });
-    return out;
-  }
-  function randRoad(exclude) {
-    const roads = roadTiles().filter(p => !exclude || Math.hypot(p.x - exclude.x, p.y - exclude.y) > 300);
-    return roads[Math.floor(Math.random() * roads.length)];
-  }
-  function freshState() {
-    const spawn = { x: TILE * 2 + 24, y: TILE * 2 + 24 };
-    const dest = randRoad(spawn);
-    return { started: false, x: spawn.x, y: spawn.y, angle: 0, speed: 0,
-      inCar: false, money: 0, minutes: 8 * 60, hasPkg: true,
-      pkg: { x: spawn.x, y: spawn.y }, dest,
-      car: { x: TILE * 4 + 24, y: TILE * 2 + 24, angle: 0 } };
-  }
-  let state = freshState();
-  const saved = load();
-  if (saved) state = Object.assign(freshState(), saved);
+  const state = {
+    player: { x: 640, y: 640, angle: 0, speed: 0, inCar: false },
+    money: 0, wanted: 0, time: 0, started: false,
+  };
+  let car = null;
   const keys = {};
-  addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true;
-    if (e.key.toLowerCase() === 'e') toggleCar(); });
-  addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
-  function hitsBuilding(x, y, r) {
-    for (const b of buildings) {
-      if (x + r > b.x && x - r < b.x + b.w && y + r > b.y && y - r < b.y + b.h) return true;
-    }
-    return false;
-  }
-  function moveEntity(e, dx, dy, r) {
-    const nx = e.x + dx, ny = e.y + dy;
-    if (!hitsBuilding(nx, e.y, r)) e.x = nx;
-    if (!hitsBuilding(e.x, ny, r)) e.y = ny;
-    e.x = Math.max(r, Math.min(W - r, e.x));
-    e.y = Math.max(r, Math.min(H - r, e.y));
-  }
-  function toggleCar() {
-    if (!state.started) return;
-    if (state.inCar) exitCar(); else enterCar();
-  }
-  function enterCar() {
-    if (state.inCar) return false;
-    if (Math.hypot(state.x - state.car.x, state.y - state.car.y) > 70) return false;
-    state.inCar = true; return true;
-  }
-  function exitCar() {
-    if (!state.inCar) return false;
-    state.inCar = false;
-    state.x = state.car.x + 40; state.y = state.car.y;
-    if (hitsBuilding(state.x, state.y, 12)) { state.x = state.car.x - 40; }
-    return true;
-  }
-  function newDelivery() {
-    state.pkg = { x: state.x, y: state.y };
-    state.dest = randRoad(state.pkg);
-    state.hasPkg = true;
-  }
-  function update(dt) {
-    if (!state.started) return;
-    state.minutes += dt * 2;
-    let dx = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
-    let dy = (keys.s ? 1 : 0) - (keys.w ? 1 : 0);
-    const len = Math.hypot(dx, dy) || 1;
-    dx /= len; dy /= len;
-    const spd = state.inCar ? 260 : 110;
-    const vx = dx * spd, vy = dy * spd;
-    const target = state.inCar ? state.car : state;
-    const ox = target.x, oy = target.y;
-    moveEntity(target, vx * dt, vy * dt, state.inCar ? 16 : 12);
-    if (state.inCar) { state.x = state.car.x; state.y = state.car.y; }
-    state.speed = Math.hypot(target.x - ox, target.y - oy) / Math.max(dt, 0.001);
-    if (dx || dy) state.angle = Math.atan2(dy, dx);
-    if (state.inCar) state.car.angle = state.angle;
-    if (state.hasPkg && Math.hypot(state.x - state.dest.x, state.y - state.dest.y) < 36) {
-      state.money += 15000;
-      state.hasPkg = false;
-      setTimeout(newDelivery, 800);
-      save();
-    }
-  }
-  function draw() {
-    const camX = Math.max(0, Math.min(W - cv.width, state.x - cv.width / 2));
-    const camY = Math.max(0, Math.min(H - cv.height, state.y - cv.height / 2));
-    ctx.fillStyle = '#2b2f33'; ctx.fillRect(0, 0, cv.width, cv.height);
-    for (let y = 0; y < ROWS; y++) {
-      for (let x = 0; x < COLS; x++) {
-        const px = x * TILE - camX, py = y * TILE - camY;
-        if (px < -TILE || py < -TILE || px > cv.width || py > cv.height) continue;
-        if (grid[y][x] === ROAD) ctx.fillStyle = '#3a3f45';
-        else if (grid[y][x] === WALK) ctx.fillStyle = '#9aa0a6';
-        else ctx.fillStyle = '#22262a';
-        ctx.fillRect(px, py, TILE, TILE);
-        if (grid[y][x] === ROAD) {
-          ctx.strokeStyle = '#f5c542'; ctx.setLineDash([10, 12]);
-          ctx.beginPath();
-          if (y % 4 === 0) { ctx.moveTo(px, py + TILE / 2); ctx.lineTo(px + TILE, py + TILE / 2); }
-          if (x % 4 === 0) { ctx.moveTo(px + TILE / 2, py); ctx.lineTo(px + TILE / 2, py + TILE); }
-          ctx.stroke(); ctx.setLineDash([]);
-        }
-      }
-    }
-    for (const b of buildings) {
-      ctx.fillStyle = b.c;
-      ctx.fillRect(b.x - camX + 3, b.y - camY + 3, b.w - 6, b.h - 6);
-      ctx.fillStyle = 'rgba(255,255,255,.25)';
-      ctx.fillRect(b.x - camX + 9, b.y - camY + 9, 10, 8);
-      ctx.fillRect(b.x - camX + 26, b.y - camY + 9, 10, 8);
-    }
-    const dx = state.dest.x - camX, dy = state.dest.y - camY;
-    ctx.fillStyle = state.hasPkg ? '#ff5a5a' : '#5aff8a';
-    ctx.beginPath(); ctx.arc(dx, dy, 10, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif';
-    ctx.fillText('◉', dx - 6, dy + 4);
-    ctx.save();
-    ctx.translate(state.car.x - camX, state.car.y - camY);
-    ctx.rotate(state.car.angle);
-    ctx.fillStyle = state.inCar ? '#2fa8ff' : '#ff8c2f';
-    ctx.fillRect(-18, -10, 36, 20);
-    ctx.fillStyle = '#123'; ctx.fillRect(-6, -8, 14, 16);
-    ctx.restore();
-    ctx.fillStyle = '#ffd23f';
-    ctx.beginPath(); ctx.arc(state.x - camX, state.y - camY, 11, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(state.x - camX, state.y - camY, 4, 0, Math.PI * 2); ctx.fill();
-    drawMinimap();
-    updateHUD();
-  }
-  function drawMinimap() {
-    if (!mmx) return;
-    const sx = mm.width / W, sy = mm.height / H;
-    mmx.fillStyle = '#222'; mmx.fillRect(0, 0, mm.width, mm.height);
-    for (const b of buildings) mmx.fillStyle = b.c, mmx.fillRect(b.x * sx, b.y * sy, b.w * sx, b.h * sy);
-    mmx.fillStyle = '#ff5a5a'; mmx.fillRect(state.dest.x * sx - 2, state.dest.y * sy - 2, 4, 4);
-    mmx.fillStyle = '#ff8c2f'; mmx.fillRect(state.car.x * sx - 2, state.car.y * sy - 2, 4, 4);
-    mmx.fillStyle = '#ffd23f'; mmx.beginPath();
-    mmx.arc(state.x * sx, state.y * sy, 3, 0, Math.PI * 2); mmx.fill();
-  }
-  function updateHUD() {
-    const kmh = Math.round((state.speed || 0) * 0.09);
-    if (elSpeed) elSpeed.textContent = kmh + ' km/jam';
-    const hh = String(Math.floor(state.minutes / 60) % 24).padStart(2, '0');
-    const mi = String(Math.floor(state.minutes) % 60).padStart(2, '0');
-    if (elTime) elTime.textContent = hh + ':' + mi;
-    if (elMoney) elMoney.textContent = 'Rp' + state.money.toLocaleString('id-ID');
-  }
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+  const S = () => (window.S && window.S.api) || null;
+  const fmtTime = (t) => String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(Math.floor(t % 60)).padStart(2, '0');
   function save() {
-    try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); return true; }
-    catch (e) { return false; }
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) {}
   }
   function load() {
-    try { const raw = localStorage.getItem(SAVE_KEY); return raw ? JSON.parse(raw) : null; }
-    catch (e) { return null; }
+    try {
+      const d = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+      if (!d || !d.player) return false;
+      state.player.x = clamp(+d.player.x || 640, 0, WORLD);
+      state.player.y = clamp(+d.player.y || 640, 0, WORLD);
+      state.player.angle = +d.player.angle || 0;
+      state.player.speed = 0; state.player.inCar = false;
+      state.money = +d.money || 0; state.wanted = +d.wanted || 0;
+      state.time = +d.time || 0; state.started = !!d.started;
+      car = null; return true;
+    } catch (e) { return false; }
   }
   function start() {
     state.started = true;
-    if (btnStart) btnStart.disabled = true;
-    save();
+    if (btnStart) btnStart.textContent = 'Bermain…';
   }
+  function enterCar() {
+    const api = S();
+    if (!api || !api.traffic || !api.traffic.nearest) return;
+    const near = api.traffic.nearest(state.player.x, state.player.y);
+    if (!near || dist(state.player.x, state.player.y, near.x, near.y) > 64) return;
+    if (api.traffic.steal) api.traffic.steal(near);
+    car = near; state.player.inCar = true;
+    state.player.x = near.x; state.player.y = near.y;
+  }
+  function exitCar() {
+    if (!car) { state.player.inCar = false; return; }
+    state.player.x = clamp(car.x + 28, 0, WORLD);
+    state.player.y = clamp(car.y + 28, 0, WORLD);
+    state.player.inCar = false; car = null;
+  }
+  window.addEventListener('keydown', (e) => {
+    keys[e.key.toLowerCase()] = true;
+    if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(e.key.toLowerCase())) e.preventDefault();
+    if ((e.key === 'e' || e.key === 'E') && !e.repeat && state.started) {
+      if (state.player.inCar) exitCar(); else enterCar();
+    }
+  });
+  window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
   if (btnStart) btnStart.addEventListener('click', start);
-  addEventListener('beforeunload', save);
-  let last = performance.now();
-  function loop(now) {
-    const dt = Math.min(0.05, (now - last) / 1000);
-    last = now;
-    update(dt);
-    draw();
-    requestAnimationFrame(loop);
+  function update(dt) {
+    const p = state.player;
+    let dx = 0, dy = 0;
+    if (keys['w'] || keys['arrowup']) dy -= 1;
+    if (keys['s'] || keys['arrowdown']) dy += 1;
+    if (keys['a'] || keys['arrowleft']) dx -= 1;
+    if (keys['d'] || keys['arrowright']) dx += 1;
+    const len = Math.hypot(dx, dy), speed = p.inCar ? CAR_SPEED : WALK_SPEED;
+    if (len > 0) {
+      dx /= len; dy /= len; p.angle = Math.atan2(dy, dx); p.speed = speed;
+      p.x = clamp(p.x + dx * speed * dt, 12, WORLD - 12);
+      p.y = clamp(p.y + dy * speed * dt, 12, WORLD - 12);
+    } else p.speed = 0;
+    if (p.inCar && car) {
+      car.x = p.x; car.y = p.y;
+      car.dx = Math.cos(p.angle); car.dy = Math.sin(p.angle);
+    }
   }
-  requestAnimationFrame(loop);
-  window.G = window.G || {};
-  window.G.api = { state, enterCar, exitCar, start, save, load };
+  function drawRoads() {
+    ctx.fillStyle = '#2d5a2e'; ctx.fillRect(0, 0, WORLD, WORLD);
+    ctx.fillStyle = '#3a3a3f';
+    for (const c of CENTRES) { ctx.fillRect(c - ROAD / 2, 0, ROAD, WORLD); ctx.fillRect(0, c - ROAD / 2, WORLD, ROAD); }
+    ctx.strokeStyle = '#f7d54d'; ctx.setLineDash([18, 18]); ctx.beginPath();
+    for (const c of CENTRES) { ctx.moveTo(c, 0); ctx.lineTo(c, WORLD); ctx.moveTo(0, c); ctx.lineTo(WORLD, c); }
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+  function drawBuildings() {
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+      const x = 176 + STEP * i, y = 176 + STEP * j;
+      ctx.fillStyle = (i + j) % 2 === 0 ? '#7a6a58' : '#6b7a8a';
+      ctx.fillRect(x, y, BLOCK, BLOCK);
+      ctx.strokeStyle = '#222'; ctx.strokeRect(x + 1, y + 1, BLOCK - 2, BLOCK - 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(x + 16, y + 16, BLOCK - 32, BLOCK - 32);
+    }
+  }
+  function drawCarShape(x, y, angle, color, w, h) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
+    ctx.fillStyle = color; ctx.fillRect(-w / 2, -h / 2, w, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-w / 6, -h / 2 + 2, w / 3, h - 4);
+    ctx.restore();
+  }
+  function drawTraffic() {
+    const api = S(); if (!api || !api.traffic) return;
+    for (const t of api.traffic) {
+      drawCarShape(t.x, t.y, Math.atan2(t.dy || 0, t.dx || 1), t.color || '#ccc', t.w || 36, t.h || 18);
+    }
+  }
+  function drawPeds() {
+    const api = S(); if (!api || !api.peds) return;
+    for (const ped of api.peds) {
+      ctx.fillStyle = ped.down > 0 ? '#888' : '#f5d76e';
+      ctx.beginPath(); ctx.arc(ped.x, ped.y, ped.down > 0 ? 5 : 7, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  function drawPolice() {
+    const api = S(); if (!api || !api.police) return;
+    for (const pc of api.police) {
+      drawCarShape(pc.x, pc.y, Math.atan2(pc.dy || 0, pc.dx || 1), pc.color || '#2c3e50', pc.w || 36, pc.h || 18);
+      ctx.fillStyle = pc.mode === 'chase' ? '#e74c3c' : '#3498db';
+      ctx.beginPath(); ctx.arc(pc.x, pc.y, 4, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  function missionTarget() {
+    const api = S(); if (!api || !api.missions || !api.missions.current) return null;
+    const m = api.missions.current;
+    if (m.phase === 'pickup') return { p: m.pickup, c: '#2ecc71' };
+    if (m.phase === 'deliver') return { p: m.dropoff, c: '#f39c12' };
+    return null;
+  }
+  function drawMission() {
+    const t = missionTarget(); if (!t) return;
+    const pulse = 18 + Math.sin(performance.now() / 200) * 4;
+    ctx.strokeStyle = t.c; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(t.p.x, t.p.y, pulse, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = t.c;
+    ctx.beginPath(); ctx.arc(t.p.x, t.p.y, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 1;
+  }
+  function drawPlayer() {
+    const p = state.player;
+    if (p.inCar && car) { drawCarShape(p.x, p.y, p.angle, '#e74c3c', 36, 18); return; }
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.angle);
+    ctx.fillStyle = '#ecf0f1';
+    ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e74c3c'; ctx.fillRect(4, -3, 10, 6);
+    ctx.restore();
+  }
+  function drawMinimap() {
+    if (!mmx) return;
+    const k = mm.width / WORLD;
+    mmx.fillStyle = '#1c2b1e'; mmx.fillRect(0, 0, mm.width, mm.height);
+    mmx.fillStyle = '#3a3a3f';
+    for (const c of CENTRES) { mmx.fillRect((c - ROAD / 2) * k, 0, ROAD * k, mm.height); mmx.fillRect(0, (c - ROAD / 2) * k, mm.width, ROAD * k); }
+    const t = missionTarget();
+    if (t) { mmx.fillStyle = '#f39c12'; mmx.fillRect(t.p.x * k - 3, t.p.y * k - 3, 6, 6); }
+    const api = S();
+    if (api && api.police) for (const pc of api.police) { mmx.fillStyle = '#3498db'; mmx.fillRect(pc.x * k - 2, pc.y * k - 2, 4, 4); }
+    mmx.fillStyle = '#fff';
+    mmx.beginPath(); mmx.arc(state.player.x * k, state.player.y * k, 4, 0, Math.PI * 2); mmx.fill();
+  }
+  function drawHUD() {
+    if (elSpeed) elSpeed.textContent = String(Math.round(state.player.speed));
+    if (elTime) elTime.textContent = fmtTime(state.time);
+    if (elMoney) elMoney.textContent = String(state.money);
+    if (elWanted) elWanted.textContent = String(Math.round(state.wanted));
+  }
+  function draw() {
+    const p = state.player;
+    const camX = clamp(p.x - cv.width / 2, 0, Math.max(0, WORLD - cv.width));
+    const camY = clamp(p.y - cv.height / 2, 0, Math.max(0, WORLD - cv.height));
+    ctx.save(); ctx.translate(-camX, -camY);
+    drawRoads(); drawBuildings(); drawMission();
+    drawTraffic(); drawPeds(); drawPolice(); drawPlayer();
+    ctx.restore(); drawMinimap(); drawHUD();
+  }
+  const G = (globalThis.G = globalThis.G || {});
+  G.api = { state, enterCar, exitCar, start, save, load };
+  load();
+  let last = performance.now();
+  function frame(now) {
+    const dt = clamp((now - last) / 1000, 0, 0.05); last = now;
+    if (state.started) {
+      state.time += dt; update(dt);
+      const api = S(); if (api && api.update) api.update(dt);
+    }
+    draw(); requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  // Simpan progres otomatis tiap 10 detik agar progres tidak hilang.
+  setInterval(save, 10000);
 })();

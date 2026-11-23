@@ -1,49 +1,42 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { buildDossier } from "./vendor/makefun-game.ts";
+// main.ts — salin game + screenshots ke /output, lalu bangun dossier.
+// Entrypoint Node 22, tanpa dependensi.
+import { cpSync, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { buildDossier } from './vendor/makefun-game.ts';
 
-const OUT = "/output";
+const OUT = '/output';
+const SOURCES = ['game', 'screenshots'] as const;
 
-function copyTree(src: string, dest: string): void {
-  mkdirSync(dest, { recursive: true });
-  for (const entry of readdirSync(src)) {
-    const from = join(src, entry);
-    const to = join(dest, entry);
-    if (statSync(from).isDirectory()) {
-      copyTree(from, to);
-    } else {
-      copyFileSync(from, to);
-    }
-  }
-}
-
-function copyFolder(name: string): void {
-  const src = join(process.cwd(), name);
-  if (!existsSync(src)) {
-    throw new Error(`Folder sumber tidak ada: ${src}`);
-  }
-  copyTree(src, join(OUT, name));
-}
-
-if (existsSync(OUT)) {
-  rmSync(OUT, { recursive: true, force: true });
-}
-mkdirSync(OUT, { recursive: true });
-
-copyFolder("game");
-copyFolder("screenshots");
-
-const dossier = buildDossier(OUT, {
+// Batas ukuran dossier, diteruskan apa adanya ke buildDossier.
+const caps = {
   text_max_bytes: 163840,
-  screenshots: {
-    max: 4,
-    max_bytes: 262144,
-  },
+  screenshots: { max: 4, max_bytes: 262144 },
   game_max_files: 993,
   game_max_bytes: 50331648,
-});
+};
 
-const dossierPath = join(OUT, "dossier.json");
-writeFileSync(dossierPath, dossier);
-const gameFiles = readdirSync(join(OUT, "game"), { recursive: true }).length;
-console.log(`game: ${gameFiles} file, dossier.json: ${statSync(dossierPath).size} byte`);
+function copyOne(src: string): void {
+  if (!existsSync(src)) throw new Error(`sumber tidak ada: ${src}`);
+  const dest = `${OUT}/${src}`;
+  cpSync(src, dest, { recursive: true });
+  console.log(`disalin: ${src} -> ${dest}`);
+}
+
+function copySources(): void {
+  mkdirSync(OUT, { recursive: true });
+  for (const src of SOURCES) copyOne(src);
+}
+
+function main(): void {
+  console.log('memulai build dossier...');
+  copySources();
+  const dossier = buildDossier(OUT, caps);
+  if (dossier.length === 0) {
+    throw new Error('buildDossier mengembalikan dossier kosong');
+  }
+  const path = `${OUT}/dossier.json`;
+  writeFileSync(path, dossier);
+  const size = statSync(path).size;
+  console.log(`dossier: ${size} byte -> ${path}`);
+}
+
+main();

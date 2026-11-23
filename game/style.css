@@ -1,30 +1,33 @@
-/* Night city — dark theme */
-* { box-sizing: border-box; }
-html, body { height: 100%; }
-body { margin: 0; background: #0a0e0c; color: #e8e8e8;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  overflow: hidden; }
+body {
+  margin: 0;
+  background: #0a0e0c;
+  color: #e8e8e8;
+  font-family: sans-serif;
+}
+
 #hud {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 10;
-  display: flex; justify-content: space-between; align-items: center;
-  background: rgba(10, 14, 12, 0.78); padding: 10px;
-  border-bottom: 1px solid #1f2a24;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: rgba(10, 14, 12, 0.78);
+  padding: 10px;
 }
-#hud .title { font-weight: 700; letter-spacing: 1px; }
-#hud .stats { font-size: 14px; color: #9fd8b4; }
-#game { display: block; margin: auto; max-width: 100vw; max-height: 100vh; }
-#game canvas { display: block; width: 100%; height: 100%; }
-#minimap { border: 2px solid #333; border-radius: 4px; background: #101613; }
-#minimap canvas { display: block; }
+
+#game {
+  display: block;
+  margin: 0 auto;
+}
+
 #controls {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
-  display: flex; justify-content: center; gap: 12px;
-  background: rgba(10, 14, 12, 0.72); padding: 10px;
-  border-top: 1px solid #1f2a24;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(10, 14, 12, 0.72);
+  padding: 10px;
 }
-#controls button {
-  background: #1c2b23; color: #e8e8e8; border: 1px solid #333;
-  border-radius: 6px; padding: 8px 14px; cursor: pointer;
+
+#minimap {
+  border: 2px solid #333;
 }
-#controls button:hover { background: #26382d; }
-#controls button:active { transform: translateY(1px); }

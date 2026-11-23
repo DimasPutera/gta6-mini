@@ -1,27 +1,30 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GTA 6 Mini — Kota Top-Down</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GTA 6 Mini — Kota Top-Down</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>
-    <h1>GTA 6 Mini — Kota Top-Down</h1>
-    <div id="hud">
-      <span>Kecepatan: <b id="speed">0</b> km/jam</span>
-      <span>Waktu: <b id="time">00:00</b></span>
-      <span>Uang: $<b id="money">0</b></span>
-      <span>Bintang: <b id="wanted">0</b></span>
-      <button id="start">Mulai</button>
-    </div>
-  </header>
-  <main>
-    <canvas id="game" width="1280" height="720"></canvas>
-    <canvas id="minimap" width="200" height="200"></canvas>
-  </main>
-  <script src="systems.js"></script>
-  <script src="game.js"></script>
+<header>
+<h1>GTA 6 Mini — Kota Top-Down</h1>
+</header>
+<main>
+<section id="hud" aria-label="HUD">
+<div>Kecepatan: <span id="speed">0</span></div>
+<div>Waktu: <span id="time">00:00</span></div>
+<div>Uang: <span id="money">$0</span></div>
+<div>Wanted: <span id="wanted">0</span></div>
+</section>
+<canvas id="game" width="1280" height="720"></canvas>
+<canvas id="minimap" width="200" height="200"></canvas>
+<div id="controls">
+<button id="start" type="button">Mulai</button>
+</div>
+</main>
+<script src="systems.js"></script>
+<script src="draw.js"></script>
+<script src="game.js"></script>
 </body>
 </html>

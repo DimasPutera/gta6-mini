@@ -1,8 +1,8 @@
 # GTA 6 Mini — Kota Top-Down
 
-![GTA 6 Mini](https://make.fun/badge/gta6-01.svg)
-![Peringkat](https://make.fun/badge/gta6-01/DimasPutera/gta6-mini/rank.svg)
-![Hadiah](https://make.fun/badge/gta6-01/DimasPutera/gta6-mini/reward.svg)
+[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/gta6-01/DimasPutera/gta6-mini/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/gta6-01/DimasPutera/gta6-mini/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
 GTA 6 Mini — Kota Top-Down adalah game kota 2D dari atas:
 pemain berjalan kaki menyusuri jalan, bisa naik mobil,
